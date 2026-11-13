@@ -117,7 +117,7 @@ def main():
         acquirer.start_stream()
         send(dict(type='connected', host=acquirer._wire_target[0],
                   port=acquirer._wire_target[1], monotonic=time.perf_counter(),
-                  decoder='bc-bg1b-ten-slot-reorder-v2', channel_layout='device_counter_then_32_eeg'))
+                  decoder='bc-bg1b-ten-slot-startup-guard-v3', channel_layout='device_counter_then_32_eeg'))
         while not done.wait(.01):
             acquirer.get_new_samples()
         drain_until = time.perf_counter()+.3

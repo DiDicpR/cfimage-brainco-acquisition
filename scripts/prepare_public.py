@@ -19,10 +19,10 @@ def export(destination):
     files += list((ROOT/'docs').glob('*.md'))
     files += [ROOT/'assets/README.md',ROOT/'data/README.md']
     vendor=ROOT/'vendor/brainco_standalone'
-    names=['brainco_adapter.py','brainco_full_stream.py','brainco_sequence.py','brainco_wire.py','brainco_worker.py','continuous_eeg.py','device_lease.py','eeg.py','sample_clock.py']
+    names=['brainco_adapter.py','brainco_discovery.py','brainco_full_stream.py','brainco_sequence.py','brainco_wire.py','brainco_worker.py','continuous_eeg.py','device_lease.py','eeg.py','sample_clock.py']
     files += [vendor/n for n in names]
     files += [p for p in (vendor/'vendor/brainco_reference').rglob('*') if p.suffix in ('.py','.md')]
-    files += [vendor/'tests/test_brainco_wire.py',vendor/'tests/test_brainco_reorder.py']
+    files += [vendor/'tests/test_brainco_wire.py',vendor/'tests/test_brainco_reorder.py',vendor/'tests/test_brainco_discovery.py']
     for source in files:
         if not source.is_file():raise FileNotFoundError(source)
         relative=source.relative_to(ROOT);target=destination/relative

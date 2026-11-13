@@ -16,6 +16,28 @@ def fixture(root):
 
 
 class TransferTests(unittest.TestCase):
+    @unittest.skipUnless(__import__('os').name=='nt','Windows extended paths')
+    def test_extended_child_prefix_does_not_look_like_path_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            original=Path.resolve
+            def mixed_prefix(path,*args,**kwargs):
+                resolved=original(path,*args,**kwargs)
+                if path.name=='photo.jpg':return Path('\\\\?\\'+str(resolved))
+                return resolved
+            with patch.object(Path,'resolve',mixed_prefix):
+                actual=safe_path(root,'stimuli/photo.jpg')
+                self.assertTrue(str(actual).startswith('\\\\?\\'))
+
+    def test_resolved_external_target_remains_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();original=Path.resolve
+            def redirected(path,*args,**kwargs):
+                if path.name=='photo.jpg':return root.parent/'outside/photo.jpg'
+                return original(path,*args,**kwargs)
+            with patch.object(Path,'resolve',redirected):
+                with self.assertRaisesRegex(ValueError,'escapes its root'):safe_path(root,'stimuli/photo.jpg')
+
     def test_images_use_anonymous_s3_while_data_keeps_authenticated_backend(self):
         from src.nas_transfer import settings,store_for,ROOT
         cfg=settings(ROOT)

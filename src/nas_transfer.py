@@ -30,13 +30,26 @@ def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
 
 
+def comparable_path(path):
+    """Windows may resolve an existing child with an extended prefix only."""
+    value=str(path)
+    if os.name=='nt':
+        if value.startswith('\\\\?\\UNC\\'):value='\\\\'+value[8:]
+        elif value.startswith('\\\\?\\'):value=value[4:]
+    return Path(value)
+
+
 def safe_path(root, key):
     p = PurePosixPath(key)
     if not key or p.is_absolute() or any(x in ('', '.', '..') for x in key.split('/')) or '\\' in key or ':' in key:
         raise ValueError('Unsafe relative transfer path')
     root = Path(root).resolve()
     result = root.joinpath(*p.parts).resolve()
-    if not result.is_relative_to(root): raise ValueError('Transfer path escapes its root')
+    # Compare equivalent Windows spellings, retaining realpath/symlink checks.
+    # Re-resolve the root after the child: another download may have created it.
+    boundary=comparable_path(root.resolve())
+    if not comparable_path(result).is_relative_to(boundary):
+        raise ValueError(f'Transfer path escapes its root: key={key!r}, root={str(boundary)!r}, resolved={str(result)!r}. Check directory junctions/symlinks.')
     return result
 
 
@@ -133,6 +146,8 @@ def asset_index(root=ROOT):
 
 
 def download_assets(root=ROOT, store=None, progress=print):
+    # Stabilize the canonical root before index checks and parallel mkdir calls.
+    (root/'assets').mkdir(parents=True,exist_ok=True)
     index=asset_index(root); store=store or store_for(settings(root),assets=True,root=root)
     def prepare(item):
         target=safe_path(root/'assets',item['path'])

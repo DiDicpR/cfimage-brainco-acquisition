@@ -6,6 +6,12 @@ from brainco_wire import FrameDecoder, WireTap
 
 
 class FullStreamAcquirer(BrainCoAcquirer):
+    def _run_sdk_call(self, function, *args, **kwargs):
+        if getattr(function,'__name__','')=='start_eeg_stream' and getattr(self,'wire',None) is not None:
+            with self.wire.lock:
+                self.wire.decoder.arm_start_command()
+        return super()._run_sdk_call(function,*args,**kwargs)
+
     def _connect_control_session(self):
         if self._sdk is None:
             import bc_ecap_sdk as sdk
@@ -17,7 +23,8 @@ class FullStreamAcquirer(BrainCoAcquirer):
         gain = getattr(self._sdk.EegSignalGain, f'GAIN_{self._eeg_gain}')
         decoder = FrameDecoder(lambda data: self._sdk.parse_eeg_data(data, gain),
                                self.metadata.sfreq, self._eeg_gain, await_normal_start=True,
-                               reorder_samples=max(10, int(self.metadata.sfreq * .2)))
+                               reorder_samples=max(10, int(self.metadata.sfreq * .2)),
+                               require_start_command=True, startup_guard_seconds=1.0)
         self.wire = WireTap(decoder, max(20000, int(self.metadata.sfreq * self._buffer_sec)),
                             archive=os.environ.get('BRAINCO_WIRE_ARCHIVE'))
         local_port = self._run_coroutine(self.wire.start(addr, port), timeout=5)

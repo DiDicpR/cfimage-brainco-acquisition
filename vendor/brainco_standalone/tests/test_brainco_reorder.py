@@ -12,7 +12,97 @@ def decoder():
     return FrameDecoder(lambda b: [b[0]*100+c for c in range(32)],250,6,reorder_samples=50)
 
 
+def counter_frame(counters):
+    payload=b''.join(message(slot,number(1,i)+message(2,bytes([n])*108))
+                     for n,(slot,i) in enumerate(zip([1,2,3,4,8,9,10,11,12,13],counters)))
+    payload=number(1,1)+message(3,message(2,payload+number(6,1)+number(7,4)))
+    packet=b'BRNC\x02\x0b'+len(payload).to_bytes(2,'little')+b'\0\2\0'+payload
+    return packet+crc16(packet).to_bytes(2,'little')
+
+
 class ReorderTests(unittest.TestCase):
+    def startup_decoder(self):
+        return FrameDecoder(lambda b:[b[0]*100+c for c in range(32)],250,6,
+            await_normal_start=True,reorder_samples=50,require_start_command=True,startup_guard_seconds=1.)
+
+    def normal_ack(self):
+        payload=number(1,2)+message(3,number(4,1))
+        data=b'BRNC\x02\x0b'+len(payload).to_bytes(2,'little')+b'\0\2\0'+payload
+        return data+crc16(data).to_bytes(2,'little')
+
+    def test_configuration_ack_does_not_open_stream_before_start_command(self):
+        d=self.startup_decoder()
+        self.assertEqual(d.feed(self.normal_ack()+frame(1267),received=100),[])
+        self.assertIsNone(d.order.highest)
+        d.arm_start_command()
+        rows=[]
+        for n in range(0,300,10):rows+=d.feed(frame(n),received=101+n/250)
+        rows+=d.flush_order(final=True)
+        self.assertEqual([r[0] for r in rows],list(range(300)))
+        self.assertEqual(d.startup_discarded,0)
+
+    def test_counter_1276_to_2_only_resets_unemitted_startup_quarantine(self):
+        d=self.startup_decoder();d.feed(self.normal_ack(),received=100);d.arm_start_command()
+        self.assertEqual(d.feed(frame(1267),received=100),[])
+        self.assertEqual(d.feed(frame(2),received=100.04),[])
+        rows=[]
+        for n in range(12,302,10):rows+=d.feed(frame(n),received=100.04+(n-2)/250)
+        rows+=d.flush_order(final=True)
+        self.assertEqual([r[0] for r in rows],list(range(2,302)))
+        self.assertEqual(d.startup_discarded,10)
+        self.assertEqual(d.startup_resets[0]['previous_highest'],1276)
+        self.assertEqual(d.anchor['index'],11)
+        self.assertAlmostEqual(d.anchor['received'],100.04)
+        with self.assertRaisesRegex(WireError,'late/reset|backward'):d.feed(frame(0),received=102)
+
+    def test_repeated_startup_resets_and_premature_flush_are_rejected(self):
+        d=self.startup_decoder();d.feed(self.normal_ack());d.arm_start_command()
+        d.feed(frame(1267),received=100);d.feed(frame(2),received=100.04)
+        self.assertEqual(d.flush_order(final=True),[])
+        d.feed(frame(100),received=100.1)
+        with self.assertRaisesRegex(WireError,'Unstable EEG startup'):d.feed(frame(0),received=100.2)
+
+    def test_mixed_first_frame_quarantined_before_any_slot_is_emitted(self):
+        mixed=counter_frame([1462,1463,1464,1465,2,3,4,5,6,7])
+        for step in (1,7,len(mixed)):
+            d=self.startup_decoder();d.feed(self.normal_ack());d.arm_start_command()
+            for pos in range(0,len(mixed),step):
+                self.assertEqual(d.feed(mixed[pos:pos+step],received=100),[])
+            self.assertEqual(d.startup_discarded,10)
+            self.assertIsNone(d.anchor)
+            self.assertIsNone(d.order.highest)
+            self.assertEqual(d.flush_order(final=True),[])
+            rows=[]
+            for n in range(8,308,10):rows+=d.feed(frame(n),received=100.04+(n-8)/250)
+            rows+=d.flush_order(final=True)
+            self.assertEqual([r[0] for r in rows],list(range(8,308)))
+            self.assertEqual(d.missing,0)
+            self.assertEqual(d.anchor,dict(index=17,received=100.04))
+            self.assertEqual(d.startup_resets[0]['reason'],'mixed_frame')
+            with self.assertRaisesRegex(WireError,'late/reset|backward'):
+                d.feed(mixed,received=102)
+
+    def test_mixed_frame_and_clean_frame_in_same_receive(self):
+        d=self.startup_decoder();d.feed(self.normal_ack());d.arm_start_command()
+        d.feed(frame(1452),received=99.96)
+        d.feed(counter_frame([1462,1463,1464,1465,2,3,4,5,6,7])+frame(8),received=100)
+        self.assertEqual(d.startup_discarded,20)
+        self.assertEqual(d.anchor,dict(index=17,received=100))
+        self.assertEqual(sorted(d.order.pending),list(range(8,18)))
+
+    def test_unverified_and_repeated_mixed_frames_fail_closed(self):
+        for counters in ([1462,1463,1464,1465,502,503,504,505,506,507],
+                         [1462,1463,1464,1465,2,4,5,6,7,8],
+                         [1462,1463,2,3,1000,1001,4,5,6,7]):
+            d=self.startup_decoder();d.feed(self.normal_ack());d.arm_start_command()
+            with self.assertRaisesRegex(WireError,'unverified mixed-frame'):
+                d.feed(counter_frame(counters),received=100)
+        d=self.startup_decoder();d.feed(self.normal_ack());d.arm_start_command()
+        mixed=counter_frame([1462,1463,1464,1465,2,3,4,5,6,7])
+        d.feed(mixed,received=100)
+        with self.assertRaisesRegex(WireError,'repeated or unverified'):
+            d.feed(mixed,received=100.04)
+
     def test_fragmented_cross_frame_order_and_duplicate_keep_every_channel(self):
         raw=b''.join(frame(i) for i in [10,0,30,20,30,40,60,50,70,80,90])
         for step in [1,7,500,len(raw)]:

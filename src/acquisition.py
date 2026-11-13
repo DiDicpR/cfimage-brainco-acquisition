@@ -29,7 +29,10 @@ def runtime(config: BrainCoConfig):
     # Single root uv environment, including the acquisition subprocess.
     metadata=load_project_metadata(ROOT/'metadata.toml')
     code_hash=hashlib.sha256()
-    for p in sorted((ROOT/'src').rglob('*.py')):
+    source_files = list((ROOT/'src').rglob('*.py'))
+    source_files += list((ROOT/'vendor/brainco_standalone').glob('*.py'))
+    source_files += list((ROOT/'vendor/brainco_standalone/vendor').rglob('*.py'))
+    for p in sorted(source_files):
         if 'tests' not in p.parts:code_hash.update(p.relative_to(ROOT).as_posix().encode()+p.read_bytes())
     e['provenance']=dict(schema_version=2,paradigm_code=metadata.unique_name,source_sha256=code_hash.hexdigest(),uv_lock_sha256=digest(ROOT/'uv.lock'),config_toml=config.source_path.read_text(encoding='utf-8'),config_sha256=digest(config.source_path),stimulus_manifest_sha256=config.assets['manifest_sha256'],schedule_sha256=config.assets['schedule_sha256'],python=sys.version,hardware_sync_verified=False)
     return e,d

@@ -72,7 +72,8 @@ def crc16(data):
 
 
 class FrameDecoder:
-    def __init__(self, convert, rate, gain, await_normal_start=False, reorder_samples=0):
+    def __init__(self, convert, rate, gain, await_normal_start=False, reorder_samples=0,
+                 require_start_command=False, startup_guard_seconds=0):
         self.convert = convert
         self.rate_enum = {250: 1, 500: 2, 1000: 3, 2000: 4}[int(rate)]
         self.gain_enum = {1: 1, 2: 2, 4: 3, 6: 4, 8: 5, 12: 6, 24: 7}[gain]
@@ -87,6 +88,23 @@ class FrameDecoder:
         self.order = SampleOrder(reorder_samples) if reorder_samples else None
         self.anchor = None
         self.latest_anchor = None
+        self.await_start_command = require_start_command
+        self.startup_guard_seconds = float(startup_guard_seconds)
+        if self.startup_guard_seconds and self.order is None:
+            raise ValueError('Startup quarantine requires the sample reorder buffer')
+        self.startup_done = not self.startup_guard_seconds
+        self.startup_since = None
+        self.last_received = None
+        self.startup_discarded = 0
+        self.startup_resets = []
+
+    def arm_start_command(self):
+        if self.samples:
+            raise WireError('Cannot restart an active EEG timeline; open a new recording')
+        self.await_start_command = False
+        self.startup_since = None
+        self.anchor = self.latest_anchor = None
+        if self.order is not None:self.order = SampleOrder(self.order.window)
 
     def feed(self, data, received=None):
         received = time.perf_counter() if received is None else received
@@ -122,6 +140,8 @@ class FrameDecoder:
                 continue
             if 2 not in eeg:
                 continue  # Configuration/mode acknowledgement.
+            if self.await_start_command:
+                continue  # NORMAL configuration is not start_eeg_stream.
             wire, payload = eeg[2]
             if wire != 2:
                 raise WireError('Invalid EEG payload')
@@ -161,6 +181,48 @@ class FrameDecoder:
                     rows.append((index, values))
                     self.last_index = index
                     self.samples += 1
+            self.last_received = received
+            if not self.startup_done:
+                if self.startup_since is None:self.startup_since = received
+                # Firmware can combine the previous run's tail and the new
+                # run's counters in ONE protobuf frame (observed 1462..1465,
+                # 2..7). Inspect before inserting any slot into SampleOrder.
+                drops = [i for i in range(1, len(frame_rows))
+                         if frame_rows[i-1][0]-frame_rows[i][0]>self.order.window]
+                if drops:
+                    split = drops[0]
+                    segments = (frame_rows[:split], frame_rows[split:])
+                    contiguous = all(all(b[0] == a[0]+1 for a, b in zip(part, part[1:]))
+                                     for part in segments)
+                    low = frame_rows[split][0]
+                    if (len(drops)!=1 or not contiguous or low>self.rate
+                            or self.startup_resets or self.order.emitted):
+                        raise WireError('Unstable EEG startup: repeated or unverified mixed-frame reset')
+                    self.startup_resets.append(dict(
+                        previous_highest=max(row[0] for row in frame_rows[:split]),
+                        new_counter=low, received=received, reason='mixed_frame',
+                        discarded_frame_counters=[row[0] for row in frame_rows]))
+                    self.startup_discarded += len(self.order.pending)+len(frame_rows)
+                    self.order = SampleOrder(self.order.window)
+                    self.startup_since = None
+                    self.anchor = self.latest_anchor = None
+                    anchor_this_receive = True
+                    # Preserve the full mixed frame in rx.bin; none of its
+                    # ambiguous samples enters the formal recording/clock.
+                    continue
+                low=min(row[0] for row in frame_rows)
+                high=self.order.highest
+                if high is not None and high-low>self.order.window:
+                    # Only one near-zero startup reset, before any rows leave
+                    # quarantine. Retain all bytes in rx.bin for later audit.
+                    if low>self.rate or self.startup_resets or self.order.emitted:
+                        raise WireError('Unstable EEG startup: repeated or unverified counter reset')
+                    self.startup_resets.append(dict(previous_highest=high,new_counter=low,received=received))
+                    self.startup_discarded += len(self.order.pending)
+                    self.order=SampleOrder(self.order.window)
+                    self.startup_since=received
+                    self.anchor=self.latest_anchor=None
+                    anchor_this_receive=True
             latest = max(r[0] for r in frame_rows)
             if self.latest_anchor is None or latest > self.latest_anchor['index']:
                 self.latest_anchor = dict(index=latest, received=received)
@@ -183,6 +245,10 @@ class FrameDecoder:
     def flush_order(self, final=False):
         if self.order is None:
             return []
+        if not self.startup_done:
+            if self.startup_since is None or self.last_received-self.startup_since<self.startup_guard_seconds:
+                return []
+            self.startup_done=True
         rows = self.order.take(flush=final)
         self.samples = self.order.emitted
         self.missing = self.order.missing
@@ -192,6 +258,9 @@ class FrameDecoder:
     def diagnostics(self):
         return dict(frames=self.frames, eeg_frames=self.eeg_frames, samples=self.samples,
                     missing=self.missing, anchor=self.anchor,
+                    awaiting_start_command=self.await_start_command,
+                    startup_ready=self.startup_done, startup_discarded_samples=self.startup_discarded,
+                    startup_resets=self.startup_resets,
                     sequence=self.order.diagnostics() if self.order is not None else None)
 
 

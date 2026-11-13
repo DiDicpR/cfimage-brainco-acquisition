@@ -52,7 +52,10 @@ def resolve_target(config, discover):
     if config['auto_discover']:
         target = discover()
         if target is None:
-            raise RuntimeError('自动发现未找到脑电帽。请检查新帽子的网络接入；电脑网口有链路不代表帽子已联网。也可关闭自动发现并填写新帽子的 IP/端口。')
+            from brainco_discovery import discover_lan
+            target = discover_lan()
+        if target is None:
+            raise RuntimeError('广播发现及本机小型设备网段查找均未找到脑电帽。请确认帽子和电脑接入同一路由器；也可关闭自动发现并填写脑电帽 IP/端口。')
         return target
     if config['address'] and config['port']:
         return config['address'], config['port']
