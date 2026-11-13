@@ -1,6 +1,6 @@
 import hashlib,json,sqlite3,tempfile,unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch,MagicMock
 from src.nas_transfer import SMBStore,download_assets,publish_assets,safe_path,snapshot_subject,upload_subject,restore_subject
 from src.storage.database import SCHEMA
 
@@ -16,6 +16,15 @@ def fixture(root):
 
 
 class TransferTests(unittest.TestCase):
+    def test_permission_check_does_not_mask_failed_write_with_cleanup_error(self):
+        from src.nas_transfer import S3Store,check_upload_access
+        store=MagicMock(spec=S3Store)
+        store.write.side_effect=PermissionError('write denied')
+        with patch('src.nas_transfer.store_for',return_value=store):
+            with self.assertRaisesRegex(PermissionError,'write denied'):
+                check_upload_access(progress=lambda _:None)
+        self.assertNotIn('client.delete_object', [str(call) for call in store.mock_calls])
+
     @unittest.skipUnless(__import__('os').name=='nt','Windows extended paths')
     def test_extended_child_prefix_does_not_look_like_path_escape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -42,11 +51,12 @@ class TransferTests(unittest.TestCase):
         from src.nas_transfer import settings,store_for,ROOT
         cfg=settings(ROOT)
         self.assertEqual(cfg['asset_backend'],'s3')
-        with patch('src.nas_transfer.S3Store') as s3,patch('src.nas_transfer.SMBStore') as smb:
+        with patch('src.nas_transfer.S3Store') as s3,patch('src.nas_transfer.SMBStore') as smb,patch('src.upload_credentials.ensure_smb_access') as login:
             store_for(cfg,assets=True)
             s3.assert_called_once_with(cfg,assets=True,write=False)
             store_for(cfg,assets=False,write=True)
             smb.assert_called_once_with(cfg['data_root'])
+            login.assert_called_once_with(cfg['data_root'],ROOT)
 
     def test_anonymous_client_ignores_missing_aws_profile(self):
         import os

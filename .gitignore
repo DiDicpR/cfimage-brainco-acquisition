@@ -37,6 +37,7 @@ reports/
 .uv-cache/
 .tools/
 .local/
+/.dispatch/
 *.local.json
 *.ppk
 *.log

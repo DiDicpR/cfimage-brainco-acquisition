@@ -1,4 +1,4 @@
-﻿param([ValidateSet('gui','download','install')][string]$Action='gui')
+﻿param([ValidateSet('gui','download','install','upload')][string]$Action='gui')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $root
@@ -87,7 +87,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Runtime import check failed.' }
     Write-Host 'Environment ready.'
 } finally { if ($guard) { $guard.Dispose() } }
+$authorizationPackage=Join-Path $root '.dispatch/upload-authorization.json'
+if (Test-Path -LiteralPath $authorizationPackage) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/install_upload_authorization.ps1') -Package $authorizationPackage
+    if ($LASTEXITCODE -ne 0) { Write-Host 'Acquisition can continue; upload authorization still needs repair.' }
+}
 if ($Action -eq 'install') { exit 0 }
 if ($Action -eq 'download') { & $python -X utf8 -m src.nas_transfer download }
+elseif ($Action -eq 'upload') { & $python -X utf8 -m src.upload_gui }
 else { & $python -X utf8 -m src.launcher }
 exit $LASTEXITCODE

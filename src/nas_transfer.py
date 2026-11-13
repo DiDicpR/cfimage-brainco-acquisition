@@ -14,14 +14,29 @@ import sqlite3
 import tempfile
 import tomllib
 import uuid
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCK = 4 * 1024 * 1024
 
 
+def filesystem_path(path):
+    """Keep deep wire archive paths readable on Windows without registry changes."""
+    value=str(Path(path).absolute())
+    if os.name=='nt' and not value.startswith('\\\\?\\'):
+        value='\\\\?\\UNC\\'+value[2:] if value.startswith('\\\\') else '\\\\?\\'+value
+    return Path(value)
+
+
+def readonly_sqlite_uri(path):
+    path=filesystem_path(path)
+    # Path.as_uri() treats \\?\ as an authority; SQLite rejects that spelling.
+    return ('file:'+quote(str(path),safe='') if os.name=='nt' else path.as_uri())+'?mode=ro'
+
+
 def sha256(path):
     h = hashlib.sha256()
-    with Path(path).open('rb') as f:
+    with filesystem_path(path).open('rb') as f:
         for block in iter(lambda: f.read(BLOCK), b''): h.update(block)
     return h.hexdigest()
 
@@ -107,7 +122,8 @@ class S3Store:
             core.set_config_variable('credentials_file',os.devnull)
             session=boto3.Session(botocore_session=core)
         else:
-            session = boto3.Session(profile_name=c['profile'] or None)
+            from .upload_credentials import authenticated_session
+            session = authenticated_session(c)
         if write and session.get_credentials() is None:
             raise RuntimeError('S3 upload requires a local AWS profile or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY; SMB credentials are not S3 keys.')
         self.client = session.client('s3',endpoint_url=c['endpoint'],region_name='us-east-1',
@@ -131,7 +147,12 @@ class S3Store:
 
 def store_for(c, *, assets, write=False, root=ROOT):
     backend=c.get('asset_backend',c['backend']) if assets else c['backend']
-    return SMBStore(c['asset_root'] if assets else c['data_root']) if backend=='smb' else S3Store(c,assets=assets,write=write)
+    if backend=='smb':
+        from .upload_credentials import ensure_smb_access
+        destination=c['asset_root'] if assets else c['data_root']
+        ensure_smb_access(destination,root)
+        return SMBStore(destination)
+    return S3Store(c,assets=assets,write=write)
 
 
 def asset_index(root=ROOT):
@@ -187,7 +208,7 @@ def publish_assets(root=ROOT, store=None, progress=print):
 
 def subject_database(source, destination, participant):
     """New database contains only this subject, never other subjects' deleted pages."""
-    with closing(sqlite3.connect(Path(source).resolve().as_uri()+'?mode=ro',uri=True)) as src, closing(sqlite3.connect(destination)) as dst:
+    with closing(sqlite3.connect(readonly_sqlite_uri(source),uri=True)) as src, closing(sqlite3.connect(filesystem_path(destination))) as dst:
         src.execute('BEGIN')
         active=src.execute("SELECT COUNT(*) FROM sessions WHERE participant_id=? AND status='running'",(participant,)).fetchone()[0]
         if active:raise RuntimeError('This subject has a running/unfinalized session; stop and finalize it before upload.')
@@ -210,7 +231,7 @@ def subject_database(source, destination, participant):
 
 def snapshot_subject(dataset_root, participant, destination):
     if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}',participant):raise ValueError('Invalid subject ID')
-    dataset_root=Path(dataset_root).resolve(); destination=Path(destination)
+    dataset_root=filesystem_path(dataset_root).resolve(); destination=filesystem_path(destination)
     subject=safe_path(dataset_root,participant)
     if not subject.is_dir():raise ValueError('No local data for this subject')
     subject_database(dataset_root/'progress.sqlite',destination/'progress.sqlite',participant)
@@ -225,7 +246,7 @@ def snapshot_subject(dataset_root, participant, destination):
             before=file.stat()
             with file.open('rb') as stream: is_db=stream.read(16)==b'SQLite format 3\x00'
             if is_db:
-                with closing(sqlite3.connect(file.resolve().as_uri()+'?mode=ro',uri=True)) as original,closing(sqlite3.connect(target)) as copy:
+                with closing(sqlite3.connect(readonly_sqlite_uri(file),uri=True)) as original,closing(sqlite3.connect(target)) as copy:
                     original.backup(copy)
                     if copy.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise IOError('Invalid recording database')
             else:shutil.copyfile(file,target)
@@ -245,7 +266,7 @@ def upload_subject(dataset_root,participant,root=ROOT,store=None,progress=print)
     machine=machine_file.read_text().strip()
     if not re.fullmatch('[0-9a-f]{32}',machine):raise ValueError('Invalid local machine ID')
     store=store or store_for(settings(root),assets=False,write=True,root=root)
-    with kit_module('device_lease').DeviceLease(), tempfile.TemporaryDirectory(prefix='upload-',dir=local) as tmp:
+    with kit_module('device_lease').DeviceLease(), tempfile.TemporaryDirectory(prefix='upload-',dir=filesystem_path(local)) as tmp:
         staging=Path(tmp); progress('Creating a consistent snapshot of this subject...')
         snapshot_subject(dataset_root,participant,staging)
         entries=[]
@@ -265,7 +286,8 @@ def upload_subject(dataset_root,participant,root=ROOT,store=None,progress=print)
         key=prefix+'/snapshots/'+snapshot+'.json'
         store.write(key,manifest_file)
         if store.digest(key)!=snapshot:raise IOError('Manifest readback failed')
-        result=dict(participant=participant,files=len(entries),bytes=sum(x['size'] for x in entries),snapshot_key=key,verified=True)
+        destination = ('s3://'+store.bucket+'/'+store.prefix+key) if isinstance(store,S3Store) else str(store.root/key)
+        result=dict(participant=participant,files=len(entries),bytes=sum(x['size'] for x in entries),snapshot_key=key,destination=destination,verified=True)
         reports=root/'reports/transfers';reports.mkdir(parents=True,exist_ok=True)
         (reports/(snapshot+'.json')).write_text(json.dumps(result,indent=2),encoding='utf-8')
         return result
@@ -273,7 +295,7 @@ def upload_subject(dataset_root,participant,root=ROOT,store=None,progress=print)
 
 def restore_subject(snapshot_key,destination,root=ROOT,store=None,progress=print):
     store=store or store_for(settings(root),assets=False,root=root)
-    destination=Path(destination).resolve()
+    destination=filesystem_path(destination).resolve()
     if destination.exists() and any(destination.iterdir()):raise ValueError('Restore destination must be empty')
     destination.mkdir(parents=True,exist_ok=True)
     expected=PurePosixPath(snapshot_key).stem
@@ -289,6 +311,26 @@ def restore_subject(snapshot_key,destination,root=ROOT,store=None,progress=print
             partial.replace(target);progress('Restored '+item['path'])
         shutil.copyfile(manifest,destination/'upload-manifest.json')
     return {'restored':len(value['files'])}
+
+
+def check_upload_access(root=ROOT, progress=print):
+    """Check real write/read/delete in an isolated prefix; never touch subject data."""
+    store=store_for(settings(root),assets=False,write=True,root=root)
+    key='_authorization_checks/'+uuid.uuid4().hex+'.bin'
+    uploaded=False
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/'probe';source.write_bytes(os.urandom(1024))
+            progress('正在检查公共目录上传及读回校验权限…')
+            store.write(key,source)
+            uploaded=True
+            if store.digest(key)!=sha256(source):raise IOError('S3 authorization check hash mismatch')
+    finally:
+        if uploaded:
+            if isinstance(store,S3Store):store.client.delete_object(Bucket=store.bucket,Key=store.prefix+key)
+            else:safe_path(store.root,key).unlink()
+    destination='s3://'+store.bucket+'/'+store.prefix if isinstance(store,S3Store) else str(store.root)
+    return {'verified':True,'destination':destination,'test_object_removed':True}
 
 
 def main(argv=None):

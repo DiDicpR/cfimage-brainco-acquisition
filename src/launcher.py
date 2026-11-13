@@ -2,8 +2,8 @@
 import sys
 from PySide6.QtCore import QProcess,QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QPushButton, QMessageBox
-from .nas_transfer import ROOT,download_assets
-from .transfer_ui import TransferDialog,connect_smb
+from .nas_transfer import ROOT,download_assets,check_upload_access
+from .transfer_ui import TransferDialog
 
 
 class Launcher(QDialog):
@@ -12,7 +12,7 @@ class Launcher(QDialog):
         layout=QVBoxLayout(self)
         hint=QLabel('自动从 NAS 下载并校验图片，无需输入账号密码，完成后自动打开采集工作台。\n请在工作台填写真实被试编号，再测试设备并开始采集。')
         hint.setWordWrap(True);layout.addWidget(hint)
-        for text,callback in [('重新下载 / 校验全部图片',self.download),('打开采集工作台',self.launch),('数据上传授权（仅上传时使用）',self.login)]:
+        for text,callback in [('重新下载 / 校验全部图片',self.download),('打开采集工作台',self.launch),('检查公共目录上传（自动登录 NAS）',self.login)]:
             button=QPushButton(text);button.clicked.connect(callback);layout.addWidget(button)
         self.status=QLabel('就绪');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.process=QProcess(self);self.process.setWorkingDirectory(str(ROOT))
@@ -20,8 +20,7 @@ class Launcher(QDialog):
         self.process.readyReadStandardOutput.connect(self.output)
         self.process.finished.connect(lambda code,status:self.status.setText('采集程序已退出。' if code==0 else '采集程序已退出，请查看 reports/launcher.log。'))
     def login(self):
-        try:connect_smb(self)
-        except Exception as e:QMessageBox.warning(self,'NAS',str(e))
+        TransferDialog('检查公共目录上传',lambda progress:check_upload_access(progress=progress),self).exec()
     def download(self):
         if self.process.state()!=QProcess.ProcessState.NotRunning:
             QMessageBox.information(self,'采集程序正在运行','请关闭采集程序后再更新图片。');return

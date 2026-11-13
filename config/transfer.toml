@@ -1,4 +1,4 @@
-# Images download anonymously over S3; recorded data still uses authenticated SMB.
+# Images are anonymous S3; EEG uses the verified writable SMB public directory.
 backend = "smb"
 asset_backend = "s3"
 asset_root = '\\172.16.4.2\aim\shared\CFIMAGE-20261113\assets'
