@@ -13,7 +13,7 @@ def export(destination):
     for directory in ['src','tests','scripts']:
         for p in (ROOT/directory).rglob('*'):
             if p.suffix in ('.py','.ps1') and '__pycache__' not in p.parts and not (directory=='src' and 'tests' in p.relative_to(ROOT/'src').parts):files.append(p)
-    files += [ROOT/n for n in ['main.py','pyproject.toml','uv.lock','.python-version','.gitignore','metadata.toml','README.md','AGENTS.md','.github/workflows/ci.yml','.dvc/config','.dvc/.gitignore','config/config.toml','config/brainco.toml','config/transfer.toml','assets/manifest.csv','assets/schedule.csv','assets/download-index.json']]
+    files += [ROOT/n for n in ['main.py','pyproject.toml','uv.lock','.python-version','.gitignore','.gitattributes','metadata.toml','README.md','AGENTS.md','.github/workflows/ci.yml','.dvc/config','.dvc/.gitignore','config/config.toml','config/brainco.toml','config/transfer.toml','assets/manifest.csv','assets/schedule.csv','assets/download-index.json']]
     files += list(ROOT.glob('*.bat'))
     files += list((ROOT/'docs').glob('*.md'))
     files += [ROOT/'assets/README.md',ROOT/'data/README.md']
