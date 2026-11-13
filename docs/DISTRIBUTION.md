@@ -1,9 +1,11 @@
-# 10 台电脑分发与 NAS 使用
+# 多台电脑分发与 NAS 使用（内网加速版）
+
+内网加速版分发仓库：`https://github.com/DiDicpR/cfimage-brainco-acquisition-lan`。使用独立目录 `D:\Paradigm-update\cfimage-brainco-acquisition-lan`，保留首版目录。新目录不会自动继承旧目录中的被试数据；已有采集需要续采时，应先迁移完整数据和本机配置，再检查剩余进度。
 
 ## 操作顺序
 
 1. 分发工具 `NAS-Dispatch-Client-20261020-v2/Start-Dispatch.bat` 输入本项目 GitHub 仓库 URL。该工具使用预先授权的 SSH 网关；不要将工具包里的 private、client.ppk 放进 GitHub。
-2. 在实验电脑双击 **启动GUI.bat / RUN_GUI.bat**。脚本寻找 uv，缺失时调用官方安装器安装到本项目 .tools，随后 `uv sync --locked --python 3.12`。SDK 从 PyPI 获取，不需要拷贝本机 wheel、conda 或虚拟环境。
+2. 在实验电脑双击 **启动GUI.bat / RUN_GUI.bat**。脚本从局域网 NAS 下载经过 SHA-256 固定的运行包，包含 Python 3.12、uv 和必需 wheels，然后由 uv 离线安装到项目 `.venv`。无需预装 Python/uv，不从公网逐个下载依赖；后续复用本地缓存。见 [环境加速与旧版升级](OFFLINE_RUNTIME.md)。
 3. 首次点击“连接 NAS”，输入 SMB 账号和密码；凭据仅传给 Windows 当前登录会话，不写入源码或日志。后续已连接时无需重复登录。
 4. 点击“一键下载 / 校验全部图片”。下载 2580 张全场景图片，保留本地层级，逐个检查大小和 SHA-256；中断后重试会跳过已核验文件，坏文件重新下载。所有图片必须在正式采集前下载到本地。
 5. 打开采集工作台，为每台机器填写本次真实被试编号，然后连通性测试、采集。发布版不预填 s001，避免 10 台机器误用相同身份。硬件、网络、显示器和实际标记时序需逐机验证。

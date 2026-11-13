@@ -8,7 +8,7 @@ from .transfer_ui import TransferDialog,connect_smb
 
 class Launcher(QDialog):
     def __init__(self):
-        super().__init__();self.setWindowTitle('CFIMAGE · 强脑采集启动器');self.resize(560,340)
+        super().__init__();self.setWindowTitle('CFIMAGE · 强脑采集启动器 · 内网加速版');self.resize(560,340)
         layout=QVBoxLayout(self)
         hint=QLabel('首次使用：连接 NAS → 下载图片 → 打开采集工作台。\n每台电脑使用当前被试的真实编号；上传按钮在采集工作台内。')
         hint.setWordWrap(True);layout.addWidget(hint)

@@ -1,8 +1,12 @@
 # BrainCo scene EEG acquisition (uv)
 
-## 10 台电脑部署
+## 实验电脑部署（内网加速版）
+
+本版独立分发仓库为 `DiDicpR/cfimage-brainco-acquisition-lan`，目标目录为 `D:\Paradigm-update\cfimage-brainco-acquisition-lan`，与首版目录分开。旧目录中的采集数据和本机配置保留；不要将新空目录当成已经自动迁移了旧版续采进度。
 
 双击 **启动GUI.bat / RUN_GUI.bat** 自动准备 uv 环境并打开启动器；首次连接 NAS 后，一键下载全部图片，再打开采集工作台。工作台提供“上传当前被试全部数据”按钮，使用逐文件读回校验和可恢复快照。
+
+实验机首次安装走局域网 NAS：下载约 161 MiB 的固定环境包（Python 3.12、uv、29 个运行依赖），校验 SHA-256 后用 uv 离线安装到项目 `.venv`，无需逐个从公网下载依赖。后续复用本地环境包。要求 Windows x64、可访问实验室 NAS；不需要预装 Python 或 uv。图片下载流程保持原样。详见 [环境加速与旧版升级](docs/OFFLINE_RUNTIME.md)。
 
 图片和数据默认使用 `\\172.16.4.2\aim\shared\CFIMAGE-20261113` 的独立子目录。S3 支持可通过本机配置切换；SMB 权限不等于 S3 权限。GitHub 不含图片、SDK wheel、采集数据或密钥。
 

@@ -6,6 +6,17 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class DistributionTests(unittest.TestCase):
+    def test_offline_runtime_matches_committed_lock_and_requirements(self):
+        cfg=json.loads((ROOT/'config/runtime-bootstrap.json').read_text(encoding='utf-8'))
+        self.assertEqual(cfg['schema_version'],1)
+        for name,key in [('uv.lock','uv_lock_sha256'),('config/requirements-runtime.txt','requirements_sha256')]:
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),cfg[key])
+        self.assertRegex(cfg['sha256'],r'^[0-9a-f]{64}$')
+        self.assertGreater(cfg['wheel_count'],0)
+        for url in cfg['urls']:
+            self.assertIn('/oi-task-assets/CFIMAGE-20261113/_runtime/',url)
+            self.assertIn(cfg['sha256'][:16],url)
+
     def test_pinned_manifest_schedule_and_download_index_without_images(self):
         config=load_config(ROOT/'config/brainco.toml')
         for name in ('manifest','schedule'):

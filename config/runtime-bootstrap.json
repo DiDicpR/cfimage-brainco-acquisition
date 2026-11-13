@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "platform": "windows-x86_64",
+  "sha256": "f07c706a95dcfdf305bcc71772dcddbb6c694d4f0026d7ed493eecdf52bf94d0",
+  "size": 169326546,
+  "urls": [
+    "http://172.16.4.2:9000/oi-task-assets/CFIMAGE-20261113/_runtime/win-x64-f07c706a95dcfdf3.zip",
+    "http://truenas-s658v2.omni-intel.cn:9000/oi-task-assets/CFIMAGE-20261113/_runtime/win-x64-f07c706a95dcfdf3.zip"
+  ],
+  "uv_lock_sha256": "de3408076fd88ad94563af61179166a2fc477e243d12c9891a7086d114e0627e",
+  "requirements_sha256": "7e87d42360f63fa304d2fe8b35bdc002d3268709cb3a98578c8d65a1f4615665",
+  "wheel_count": 29,
+  "wheel_bytes": 128296097
+}

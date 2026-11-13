@@ -1,5 +1,7 @@
 # Hash-locked schedules and manifests must survive Git checkout byte-for-byte.
 assets/*.csv -text
+uv.lock -text
+config/requirements-runtime.txt -text
 *.py text eol=lf
 *.ps1 text eol=crlf
 *.bat text eol=crlf
