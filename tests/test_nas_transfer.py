@@ -1,5 +1,6 @@
 import hashlib,json,sqlite3,tempfile,unittest
 from pathlib import Path
+from unittest.mock import patch
 from src.nas_transfer import SMBStore,download_assets,publish_assets,safe_path,snapshot_subject,upload_subject,restore_subject
 from src.storage.database import SCHEMA
 
@@ -15,6 +16,26 @@ def fixture(root):
 
 
 class TransferTests(unittest.TestCase):
+    def test_images_use_anonymous_s3_while_data_keeps_authenticated_backend(self):
+        from src.nas_transfer import settings,store_for,ROOT
+        cfg=settings(ROOT)
+        self.assertEqual(cfg['asset_backend'],'s3')
+        with patch('src.nas_transfer.S3Store') as s3,patch('src.nas_transfer.SMBStore') as smb:
+            store_for(cfg,assets=True)
+            s3.assert_called_once_with(cfg,assets=True,write=False)
+            store_for(cfg,assets=False,write=True)
+            smb.assert_called_once_with(cfg['data_root'])
+
+    def test_anonymous_client_ignores_missing_aws_profile(self):
+        import os
+        from src.nas_transfer import settings,S3Store,ROOT
+        from botocore import UNSIGNED
+        with patch.dict(os.environ,{'AWS_PROFILE':'missing-profile-for-test'}),patch('botocore.session.Session.get_credentials',side_effect=AssertionError('Must not request credentials')):
+            cfg=settings(ROOT);cfg['profile']='missing-profile-for-test'
+            store=S3Store(cfg,assets=True)
+            self.assertEqual(store.client.meta.config.signature_version,UNSIGNED)
+            store.client.close()
+
     def test_path_escape_and_case_collisions(self):
         with tempfile.TemporaryDirectory() as tmp:
             for key in ['../outside','/absolute','a/../b','C:/file','x\\y','a//b']:

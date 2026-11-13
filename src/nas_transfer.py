@@ -1,6 +1,7 @@
 """Verified, resumable file transfers. No credentials in source or reports."""
 from __future__ import annotations
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import csv
 import hashlib
@@ -47,6 +48,7 @@ def settings(root=ROOT):
         if set(overrides)-set(c): raise ValueError('Unknown transfer configuration field')
         c.update(overrides)
     if c['backend'] not in ('smb', 's3'): raise ValueError('backend must be smb or s3')
+    if c.get('asset_backend',c['backend']) not in ('smb','s3'): raise ValueError('asset_backend must be smb or s3')
     if c['prefix'] != 'CFIMAGE-20261113': raise ValueError('Unexpected NAS prefix')
     return c
 
@@ -82,7 +84,17 @@ class S3Store:
         from botocore.config import Config
         self.bucket = c['asset_bucket'] if assets else c['data_bucket']
         self.prefix = c['prefix']+'/'
-        session = boto3.Session(profile_name=c['profile'] or None)
+        if assets and not write:
+            # Public images must not depend on an operator's AWS account/profile.
+            import botocore.session
+            from botocore.configprovider import ConstantProvider
+            core=botocore.session.get_session()
+            core.get_component('config_store').set_config_provider('profile',ConstantProvider(None))
+            core.set_config_variable('config_file',os.devnull)
+            core.set_config_variable('credentials_file',os.devnull)
+            session=boto3.Session(botocore_session=core)
+        else:
+            session = boto3.Session(profile_name=c['profile'] or None)
         if write and session.get_credentials() is None:
             raise RuntimeError('S3 upload requires a local AWS profile or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY; SMB credentials are not S3 keys.')
         self.client = session.client('s3',endpoint_url=c['endpoint'],region_name='us-east-1',
@@ -104,8 +116,9 @@ class S3Store:
         return h.hexdigest()
 
 
-def store_for(c, *, assets, write=False):
-    return SMBStore(c['asset_root'] if assets else c['data_root']) if c['backend']=='smb' else S3Store(c,assets=assets,write=write)
+def store_for(c, *, assets, write=False, root=ROOT):
+    backend=c.get('asset_backend',c['backend']) if assets else c['backend']
+    return SMBStore(c['asset_root'] if assets else c['data_root']) if backend=='smb' else S3Store(c,assets=assets,write=write)
 
 
 def asset_index(root=ROOT):
@@ -120,27 +133,31 @@ def asset_index(root=ROOT):
 
 
 def download_assets(root=ROOT, store=None, progress=print):
-    index=asset_index(root); store=store or store_for(settings(root),assets=True)
-    downloaded=0
-    for n,item in enumerate(index['files'],1):
+    index=asset_index(root); store=store or store_for(settings(root),assets=True,root=root)
+    def prepare(item):
         target=safe_path(root/'assets',item['path'])
         if target.is_file() and target.stat().st_size==item['size'] and sha256(target)==item['sha256']:
-            continue
+            return 0
         target.parent.mkdir(parents=True,exist_ok=True)
         partial=target.with_name(target.name+'.'+uuid.uuid4().hex+'.partial')
         try:
             store.read(item['path'],partial)
             if partial.stat().st_size!=item['size'] or sha256(partial)!=item['sha256']:raise IOError('Asset checksum mismatch: '+item['path'])
-            os.replace(partial,target);downloaded+=1
+            os.replace(partial,target)
         finally:
             if partial.exists():partial.unlink()
-        if n%25==0 or n==len(index['files']):progress(f'Download {n}/{len(index["files"])}')
+        return 1
+    downloaded=0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for n,changed in enumerate(pool.map(prepare,index['files']),1):
+            downloaded+=changed
+            if n%25==0 or n==len(index['files']):progress(f'Verified {n}/{len(index["files"])}, downloaded: {downloaded}')
     progress(f'Assets verified: {len(index["files"])}, downloaded: {downloaded}')
     return {'verified':len(index['files']),'downloaded':downloaded}
 
 
 def publish_assets(root=ROOT, store=None, progress=print):
-    index=asset_index(root); store=store or store_for(settings(root),assets=True,write=True)
+    index=asset_index(root); store=store or store_for(settings(root),assets=True,write=True,root=root)
     for n,item in enumerate(index['files'],1):
         source=safe_path(root/'assets',item['path'])
         if sha256(source)!=item['sha256']:raise ValueError('Local asset changed: '+item['path'])
@@ -212,7 +229,7 @@ def upload_subject(dataset_root,participant,root=ROOT,store=None,progress=print)
         except FileExistsError:pass
     machine=machine_file.read_text().strip()
     if not re.fullmatch('[0-9a-f]{32}',machine):raise ValueError('Invalid local machine ID')
-    store=store or store_for(settings(root),assets=False,write=True)
+    store=store or store_for(settings(root),assets=False,write=True,root=root)
     with kit_module('device_lease').DeviceLease(), tempfile.TemporaryDirectory(prefix='upload-',dir=local) as tmp:
         staging=Path(tmp); progress('Creating a consistent snapshot of this subject...')
         snapshot_subject(dataset_root,participant,staging)
@@ -240,7 +257,7 @@ def upload_subject(dataset_root,participant,root=ROOT,store=None,progress=print)
 
 
 def restore_subject(snapshot_key,destination,root=ROOT,store=None,progress=print):
-    store=store or store_for(settings(root),assets=False)
+    store=store or store_for(settings(root),assets=False,root=root)
     destination=Path(destination).resolve()
     if destination.exists() and any(destination.iterdir()):raise ValueError('Restore destination must be empty')
     destination.mkdir(parents=True,exist_ok=True)

@@ -1,6 +1,6 @@
 """One GUI for first-time assets, NAS login, and explicit acquisition launch."""
 import sys
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess,QTimer
 from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QPushButton, QMessageBox
 from .nas_transfer import ROOT,download_assets
 from .transfer_ui import TransferDialog,connect_smb
@@ -10,9 +10,9 @@ class Launcher(QDialog):
     def __init__(self):
         super().__init__();self.setWindowTitle('CFIMAGE · 强脑采集启动器 · 内网加速版');self.resize(560,340)
         layout=QVBoxLayout(self)
-        hint=QLabel('首次使用：连接 NAS → 下载图片 → 打开采集工作台。\n每台电脑使用当前被试的真实编号；上传按钮在采集工作台内。')
+        hint=QLabel('自动从 NAS 下载并校验图片，无需输入账号密码，完成后自动打开采集工作台。\n请在工作台填写真实被试编号，再测试设备并开始采集。')
         hint.setWordWrap(True);layout.addWidget(hint)
-        for text,callback in [('连接 NAS（首次登录）',self.login),('一键下载 / 校验全部图片',self.download),('打开采集工作台',self.launch)]:
+        for text,callback in [('重新下载 / 校验全部图片',self.download),('打开采集工作台',self.launch),('数据上传授权（仅上传时使用）',self.login)]:
             button=QPushButton(text);button.clicked.connect(callback);layout.addWidget(button)
         self.status=QLabel('就绪');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.process=QProcess(self);self.process.setWorkingDirectory(str(ROOT))
@@ -28,7 +28,7 @@ class Launcher(QDialog):
         TransferDialog('下载并校验图片',lambda progress:download_assets(progress=progress),self).exec()
     def launch(self):
         if self.process.state()!=QProcess.ProcessState.NotRunning:return
-        transfer=TransferDialog('自动准备 / 校验实验图片',lambda progress:download_assets(progress=progress),self)
+        transfer=TransferDialog('自动准备 / 校验实验图片（无需登录）',lambda progress:download_assets(progress=progress),self,auto_close=True)
         transfer.exec()
         if transfer.worker.error:return
         self.status.setText('正在校验素材并打开工作台…')
@@ -47,6 +47,8 @@ class Launcher(QDialog):
 
 
 def main():
-    app=QApplication.instance() or QApplication(sys.argv);dialog=Launcher();dialog.show();return app.exec()
+    app=QApplication.instance() or QApplication(sys.argv);dialog=Launcher();dialog.show()
+    QTimer.singleShot(0,dialog.launch)
+    return app.exec()
 
 if __name__=='__main__':raise SystemExit(main())

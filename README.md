@@ -4,11 +4,11 @@
 
 本版独立分发仓库为 `DiDicpR/cfimage-brainco-acquisition-lan`，目标目录为 `D:\Paradigm-update\cfimage-brainco-acquisition-lan`，与首版目录分开。旧目录中的采集数据和本机配置保留；不要将新空目录当成已经自动迁移了旧版续采进度。
 
-双击 **启动GUI.bat / RUN_GUI.bat** 自动准备 uv 环境并打开启动器；首次连接 NAS 后，一键下载全部图片，再打开采集工作台。工作台提供“上传当前被试全部数据”按钮，使用逐文件读回校验和可恢复快照。
+双击 **启动GUI.bat / RUN_GUI.bat** 自动准备 uv 环境、从 NAS 匿名下载并校验全部图片，然后自动打开采集工作台；无需输入 NAS 账号密码。图片最多 4 路并行下载，重试复用已校验文件。填写真实被试编号、通过设备连通性检查后再明确开始采集。数据上传仍使用本机 SMB 授权，启动器保留“数据上传授权”入口；该入口不影响图片准备和采集。
 
 实验机首次安装走局域网 NAS：下载约 161 MiB 的固定环境包（Python 3.12、uv、29 个运行依赖），校验 SHA-256 后用 uv 离线安装到项目 `.venv`，无需逐个从公网下载依赖。后续复用本地环境包。要求 Windows x64、可访问实验室 NAS；不需要预装 Python 或 uv。图片下载流程保持原样。详见 [环境加速与旧版升级](docs/OFFLINE_RUNTIME.md)。
 
-图片和数据默认使用 `\\172.16.4.2\aim\shared\CFIMAGE-20261113` 的独立子目录。S3 支持可通过本机配置切换；SMB 权限不等于 S3 权限。GitHub 不含图片、SDK wheel、采集数据或密钥。
+图片默认匿名读取 `http://172.16.4.2:9000/oi-task-assets/CFIMAGE-20261113/`，数据上传仍使用 `\\172.16.4.2\aim\shared\CFIMAGE-20261113\eeg-data`。`asset_backend` 与数据 `backend` 分别配置。GitHub 不含图片、SDK wheel、采集数据或密钥。
 
 详细步骤：[分发与 NAS 操作说明](docs/DISTRIBUTION.md)。
 
