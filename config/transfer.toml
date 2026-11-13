@@ -1,0 +1,10 @@
+# SMB works with the existing laboratory account. Override in transfer.local.toml.
+backend = "smb"
+asset_root = '\\172.16.4.2\aim\shared\CFIMAGE-20261113\assets'
+data_root = '\\172.16.4.2\aim\shared\CFIMAGE-20261113\eeg-data'
+endpoint = "http://truenas-s658v2.omni-intel.cn:9000"
+asset_bucket = "oi-task-assets"
+data_bucket = "oi-data"
+prefix = "CFIMAGE-20261113"
+profile = ""
+

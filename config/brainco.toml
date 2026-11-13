@@ -1,0 +1,33 @@
+[experiment]
+name = "brainco-scenes"
+trials = 25800
+trial_duration_s = 0.6
+[device]
+backend = "brainco"
+sample_rate_hz = 250
+channels = 32
+auto_discover = true
+host = ""
+port = 0
+gain = 6
+scan_timeout = 6
+ready_timeout = 20
+[storage]
+output_dir = "../data/native"
+[protocol]
+participant = ""
+repetitions = 10
+isi_s = 0.1
+break_every = 80
+math_duration_s = 2.0
+resume_delay_s = 0.8
+seed = 20261112
+max_cycles_per_session = 0
+[assets]
+manifest = "../assets/manifest.csv"
+schedule = "../assets/schedule.csv"
+manifest_sha256 = "380fb9aa1cfb83f8df7c1948caf772dbd30ae121cd92f0d3fd6f6630fb48c308"
+schedule_sha256 = "3f552a3a510f9c874d6af4129a0975cd55c25f007f8924cfb8a08441735424a4"
+[display]
+screen_index = 0
+fullscreen = true

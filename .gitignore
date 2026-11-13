@@ -1,0 +1,50 @@
+# 环境、缓存、构建产物
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# 凭据与本机配置
+/.oss-credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+config/*.local.toml
+
+# 采集记录和本地刺激物不提交 Git
+data/*
+!data/README.md
+assets/*
+!assets/README.md
+!assets/*.dvc
+!assets/.gitignore
+!assets/manifest.csv
+
+# Deployment/local state and private binaries
+reports/
+.uv-cache/
+.tools/
+.local/
+*.local.json
+*.ppk
+*.log
+*.zip
+*.whl
+*.lock.tmp
+vendor/brainco_standalone/brainco_settings.json
+vendor/brainco_standalone/.device.lock
+vendor/brainco_standalone/recordings/
+!assets/schedule.csv
+!assets/download-index.json

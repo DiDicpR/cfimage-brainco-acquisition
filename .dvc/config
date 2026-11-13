@@ -1,0 +1,9 @@
+[core]
+    analytics = false
+    remote = nas
+['remote "nas"']
+    url = s3://oi-task-assets/BCSCN-20261113/dvc
+    endpointurl = http://truenas-s658v2.omni-intel.cn:9000
+    region = us-east-1
+    ssl_verify = true
+    allow_anonymous_login = true

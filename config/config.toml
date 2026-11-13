@@ -1,0 +1,14 @@
+[experiment]
+name = "brainco-scenes-mock"
+trials = 3
+trial_duration_s = 1.0
+
+[device]
+# 模板只提供模拟设备；接入真实硬件前请实现适配器并增加配置校验。
+backend = "mock"
+sample_rate_hz = 100
+channels = 2
+
+[storage]
+# 相对配置文件所在目录解析。
+output_dir = "../data"
